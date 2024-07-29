@@ -1,4 +1,3 @@
-
 import express from "express";
 import cors from "cors";
 import simpleGit from "simple-git";
@@ -33,10 +32,8 @@ app.post("/deploy", async (req, res) => {
     
     publisher.hSet("status", id, "uploaded");
 
-    res.json({
-        id: id
-    })
-
+    res.json({id})
+    
 });
 
 app.get("/status", async (req, res) => {
