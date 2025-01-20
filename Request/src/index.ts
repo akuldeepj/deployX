@@ -42,6 +42,7 @@
 // })
 
 // app.listen(3001);
+
 import express from "express";
 import { S3 } from "aws-sdk";
 import dotenv from "dotenv";
@@ -80,8 +81,11 @@ app.get("/*", async (req, res) => {
             html: "text/html",
             css: "text/css",
             js: "application/javascript",
-            json: "application/json"
-        };
+            json: "application/json",
+            png: "image/png",
+            jpg: "image/jpeg",
+            svg: "image/svg+xml"
+        };        
 
         const type = extension ? mimeTypes[extension] || "application/octet-stream" : "application/octet-stream";
         res.set("Content-Type", type);
