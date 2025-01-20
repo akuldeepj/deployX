@@ -14,16 +14,26 @@
   "dependencies": {
     "@types/express": "^4.17.21",
     "aws-sdk": "^2.1659.0",
+    "bcrypt": "^5.1.0",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^8.9.5",
     "redis": "^4.6.15",
     "simple-git": "^3.25.0",
-    "typescript": "^5.5.3"
+    "typescript": "^5.7.3",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@types/bcrypt": "^5.0.0",
+    "@types/cookie-parser": "^1.4.3",
     "@types/cors": "^2.8.17",
-    "nodemon": "^3.1.4",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/mongoose": "^5.11.97",
+    "@types/uuid": "^9.0.0",
+    "nodemon": "^3.1.9",
     "ts-node": "^10.9.2"
   }
 }

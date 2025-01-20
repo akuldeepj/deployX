@@ -1,11 +1,27 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from 'cookie-parser';
 import simpleGit from "simple-git";
 import generate from "./utils/generate";
 import { getAllFiles } from "./file";
 import path from "path";
 import { uploadFile } from "./aws";
 import { createClient } from "redis";
+import { hash, compare } from 'bcrypt';
+import { sign, verify } from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
+import mongoose from "mongoose";
+import { User } from "./models/User";
+import fs from 'fs';
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { userId: string }
+    }
+  }
+}
+
 const publisher = createClient();
 publisher.connect();
 
@@ -13,27 +29,83 @@ const client = createClient();
 client.connect();
 
 const app = express();
-app.use(cors())
+
+// CORS configuration
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', 'http://localhost:3002');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+        res.header('Access-Control-Max-Age', '86400'); // 24 hours
+        res.status(204).end();
+        return;
+    }
+    next();
+});
+
+// Parse cookies first
+app.use(cookieParser());
 app.use(express.json());
 
-app.post("/deploy", async (req, res) => {
-    const repoUrl = req.body.repoUrl;
-    const id = generate(); 
-    await simpleGit().clone(repoUrl, path.join(__dirname, `output/${id}`));
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/vercel-clone');
 
-    const files = getAllFiles(path.join(__dirname, `output/${id}`));
+// Add middleware to check auth
+const authenticateToken = async (req: any, res: any, next: any) => {
+  const token = req.cookies.token;
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
-    files.forEach(async file => {
-        await uploadFile(file.slice(__dirname.length + 1), file);
-    })
+  try {
+    const user = verify(token, process.env.JWT_SECRET!);
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
 
-    await new Promise((resolve) => setTimeout(resolve, 5000))
-    publisher.lPush("build-queue", id);
+app.post("/deploy", authenticateToken, async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
     
-    publisher.hSet("status", id, "uploaded");
-
-    res.json({id})
-    
+    try {
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        if (user.deployments.length >= 5) {
+            return res.status(400).json({ error: 'Maximum deployment limit reached' });
+        }
+        
+        const repoUrl = req.body.repoUrl;
+        const id = generate();
+        
+        await simpleGit().clone(repoUrl, path.join(__dirname, `output/${id}`));
+        const files = getAllFiles(path.join(__dirname, `output/${id}`));
+        
+        for (const file of files) {
+            await uploadFile(file.slice(__dirname.length + 1), file);
+        }
+        
+        user.deployments.push(id);
+        await user.save();
+        
+        await publisher.lPush("build-queue", id);
+        await publisher.hSet("status", id, "uploaded");
+        
+        res.json({ id });
+    } catch (error) {
+        console.error("Deploy error:", error);
+        res.status(500).json({ error: "Deployment failed" });
+    }
 });
 
 app.get("/status", async (req, res) => {
@@ -83,6 +155,164 @@ app.get("/error/:id", async (req, res) => {
         res.json({ error: error || null });
     } catch (error) {
         res.status(500).json({ error: "Failed to fetch error details" });
+    }
+});
+
+// Auth routes
+app.post('/auth/register', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const hashedPassword = await hash(password, 10);
+    
+    const user = new User({
+      email,
+      password: hashedPassword,
+    });
+    
+    await user.save();
+    res.status(200).json({ message: 'User registered successfully' });
+  } catch (error) {
+    console.error('Registration error:', error);
+    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const isValid = await compare(password, user.password);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const token = sign({ userId: user._id }, process.env.JWT_SECRET!);
+    res.cookie('token', token, { httpOnly: true });
+    res.status(200).json({ 
+      user: { 
+        id: user._id, 
+        email: user.email, 
+        deployments: user.deployments 
+      } 
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.get('/auth/logout', (req, res) => {
+    res.clearCookie('token');
+    res.status(200).json({ message: 'Logged out' });
+    }
+);
+
+app.get("/auth/session", authenticateToken, async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({ 
+            user: { 
+                id: user._id, 
+                email: user.email, 
+                deployments: user.deployments 
+            } 
+        });
+    } catch (error) {
+        console.error('Session error:', error);
+        res.status(500).json({ error: 'Failed to fetch session' });
+    }
+});
+
+app.get('/deployments', authenticateToken, async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Get deployments with their status and other details
+        const deploymentPromises = user.deployments.map(async (id) => {
+            const status = await client.hGet("status", id) || 'unknown';
+            const error = await client.hGet("error", id);
+            const logs = await client.lRange(`logs:${id}`, 0, -1);
+            const parsedLogs = logs.map(log => JSON.parse(log));
+            
+            return {
+                id,
+                status,
+                error: error || null,
+                logs: parsedLogs,
+                url: status === 'deployed' ? `http://${id}.localhost:3001` : null
+            };
+        });
+
+        const deployments = await Promise.all(deploymentPromises);
+        res.json({ deployments });
+    } catch (error) {
+        console.error('Deployments error:', error);
+        res.status(500).json({ error: 'Failed to fetch deployments' });
+    }
+});
+
+app.delete('/deployments/:id', authenticateToken, async (req, res) => {
+    try {
+        if (!req.user?.userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const deploymentId = req.params.id;
+        
+        // Check if deployment exists in user's deployments
+        if (!user.deployments.includes(deploymentId)) {
+            return res.status(404).json({ error: 'Deployment not found' });
+        }
+
+        // Remove deployment from user's deployments array
+        user.deployments = user.deployments.filter(id => id !== deploymentId);
+        await user.save();
+        
+        // Clean up Redis data
+        await Promise.all([
+            client.hDel("status", deploymentId),
+            client.hDel("error", deploymentId),
+            client.del(`logs:${deploymentId}`)
+        ]);
+
+        // Clean up deployment files
+        const deploymentPath = path.join(__dirname, `output/${deploymentId}`);
+        if (fs.existsSync(deploymentPath)) {
+            fs.rmSync(deploymentPath, { recursive: true, force: true });
+        }
+        
+        res.status(200).json({ message: 'Deployment deleted successfully' });
+    } catch (error) {
+        console.error('Delete deployment error:', error);
+        res.status(500).json({ error: 'Failed to delete deployment' });
     }
 });
 

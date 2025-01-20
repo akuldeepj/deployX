@@ -13,10 +13,11 @@ interface Log {
 }
 
 interface DeploymentStatusProps {
-    deploymentId: string
+    deploymentId: string;
+    onReset: () => void;
 }
 
-export function DeploymentStatus({ deploymentId }: DeploymentStatusProps) {
+export function DeploymentStatus({ deploymentId, onReset }: DeploymentStatusProps) {
     const [status, setStatus] = useState<string>("uploaded")
     const [progress, setProgress] = useState(0)
     const [logs, setLogs] = useState<Log[]>([])
