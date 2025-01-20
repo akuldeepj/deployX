@@ -50,7 +50,6 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
         method: 'DELETE',
         credentials: 'include',
         headers: {
-          'Accept': 'application/json',
           'Content-Type': 'application/json'
         }
       });

@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mongoose from "mongoose";
 import { User } from "./models/User";
 import fs from 'fs';
+import AWS from 'aws-sdk';
 
 declare global {
   namespace Express {
@@ -28,23 +29,26 @@ publisher.connect();
 const client = createClient();
 client.connect();
 
+const s3 = new AWS.S3();
+
 const app = express();
 
 // CORS configuration
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', 'http://localhost:3002');
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:3002'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+    credentials: true,
+    optionsSuccessStatus: 204
+}));
+app.options('*', (req, res) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
     res.header('Access-Control-Allow-Credentials', 'true');
-    
-    // Handle preflight
-    if (req.method === 'OPTIONS') {
-        res.header('Access-Control-Max-Age', '86400'); // 24 hours
-        res.status(204).end();
-        return;
-    }
-    next();
+    res.sendStatus(204);
 });
+
 
 // Parse cookies first
 app.use(cookieParser());
@@ -303,13 +307,27 @@ app.delete('/deployments/:id', authenticateToken, async (req, res) => {
             client.del(`logs:${deploymentId}`)
         ]);
 
-        // Clean up deployment files
-        const deploymentPath = path.join(__dirname, `output/${deploymentId}`);
-        if (fs.existsSync(deploymentPath)) {
-            fs.rmSync(deploymentPath, { recursive: true, force: true });
+        // Delete deployment files from S3
+        try {
+            const objects = await s3.listObjectsV2({
+                Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                Prefix: `build/${deploymentId}`
+            }).promise();
+
+            if (objects.Contents && objects.Contents.length > 0) {
+                await s3.deleteObjects({
+                    Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                    Delete: {
+                        Objects: objects.Contents.map(({ Key }) => ({ Key: Key! }))
+                    }
+                }).promise();
+            }
+        } catch (error) {
+            console.error('Failed to cleanup S3:', error);
+            // Don't fail the request if S3 cleanup fails
         }
-        
-        res.status(200).json({ message: 'Deployment deleted successfully' });
+
+        res.json({ message: 'Deployment deleted successfully' });
     } catch (error) {
         console.error('Delete deployment error:', error);
         res.status(500).json({ error: 'Failed to delete deployment' });
