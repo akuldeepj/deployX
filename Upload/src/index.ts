@@ -44,4 +44,46 @@ app.get("/status", async (req, res) => {
     })
 })
 
+app.post("/logs", async (req, res) => {
+    const { id, message, type } = req.body;
+    
+    try {
+        // Store log in Redis with timestamp
+        const logEntry = {
+            message,
+            type, // 'info', 'error', etc.
+            timestamp: new Date().toISOString()
+        };
+        
+        await client.lPush(`logs:${id}`, JSON.stringify(logEntry));
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Error storing log:", error);
+        res.status(500).json({ error: "Failed to store log" });
+    }
+});
+
+app.get("/logs/:id", async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        const logs = await client.lRange(`logs:${id}`, 0, -1);
+        const parsedLogs = logs.map(log => JSON.parse(log));
+        res.json(parsedLogs);
+    } catch (error) {
+        console.error("Error retrieving logs:", error);
+        res.status(500).json({ error: "Failed to retrieve logs" });
+    }
+});
+
+app.get("/error/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+        const error = await client.hGet("error", id);
+        res.json({ error: error || null });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch error details" });
+    }
+});
+
 app.listen(3000);

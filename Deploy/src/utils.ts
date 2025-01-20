@@ -1,10 +1,13 @@
 import { exec } from "child_process";
 import path from "path";
 import fs from "fs/promises";
+import axios from "axios";
 
 export async function buildProject(id: string) {
     return new Promise<string>(async (resolve, reject) => {
         const projectPath = path.join(__dirname, `output/${id}`);
+        let errorOutput = "";
+        
         try {
             // Update homepage in package.json
             await updateHomepage(projectPath);
@@ -12,12 +15,15 @@ export async function buildProject(id: string) {
             // Run build commands
             const child = exec(`cd ${projectPath} && npm install && npm run build`);
 
-            child.stdout?.on("data", (data) => {
+            child.stdout?.on("data", async (data) => {
                 console.log("stdout: " + data);
+                await sendLog(id, data, "info");
             });
 
-            child.stderr?.on("data", (data) => {
+            child.stderr?.on("data", async (data) => {
                 console.error("stderr: " + data);
+                errorOutput += data;
+                await sendLog(id, data, "error");
             });
 
             child.on("close", async (code) => {
@@ -30,11 +36,11 @@ export async function buildProject(id: string) {
                         resolve(outputDir);
                     }
                 } else {
-                    reject(`Build failed for project: ${id} with code ${code}`);
+                    reject(`Build failed with error:\n${errorOutput}`);
                 }
             });
         } catch (error) {
-            reject(`Failed to build project ${id}: ${error}`);
+            reject(`Failed to build project: ${error}`);
         }
     });
 }
@@ -68,5 +74,17 @@ async function updateHomepage(projectPath: string) {
     } catch (error) {
         console.error(`Failed to update homepage in package.json: ${error}`);
         throw error;
+    }
+}
+
+export async function sendLog(id: string, message: string, type: 'info' | 'error' = 'info') {
+    try {
+        await axios.post('http://localhost:3000/logs', {
+            id,
+            message,
+            type
+        });
+    } catch (error) {
+        console.error('Failed to send log:', error);
     }
 }
