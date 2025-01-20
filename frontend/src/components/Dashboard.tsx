@@ -70,23 +70,29 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
   };
 
   const handleRedeploy = async (id: string) => {
-    if (deployments.length >= 5) {
-      alert('Maximum deployment limit reached (5). Please remove some deployments first.');
-      return;
-    }
-    
     try {
-      const response = await fetch('http://localhost:3000/deploy', {
+      const response = await fetch(`http://localhost:3000/redeploy/${id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ id }),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ repoUrl: 'your-repo-url' }) // Replace with actual repo URL
       });
-      if (response.ok) {
-        await fetchDeployments();
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('Redeploy failed:', data.error);
+        return;
       }
+
+      console.log('Redeploy success:', data.message);
+      // Refresh deployments
+      await fetchDeployments();
     } catch (error) {
-      console.error('Redeploy failed:', error);
+      console.error('Failed to redeploy:', error);
     }
   };
 

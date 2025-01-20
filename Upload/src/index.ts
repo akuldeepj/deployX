@@ -14,6 +14,7 @@ import mongoose from "mongoose";
 import { User } from "./models/User";
 import fs from 'fs';
 import AWS from 'aws-sdk';
+import { Log } from './models/User';
 
 declare global {
   namespace Express {
@@ -124,14 +125,13 @@ app.post("/logs", async (req, res) => {
     const { id, message, type } = req.body;
     
     try {
-        // Store log in Redis with timestamp
-        const logEntry = {
+        // Store log in MongoDB
+        const logEntry = new Log({
+            deploymentId: id,
             message,
-            type, // 'info', 'error', etc.
-            timestamp: new Date().toISOString()
-        };
-        
-        await client.lPush(`logs:${id}`, JSON.stringify(logEntry));
+            type
+        });
+        await logEntry.save();
         res.json({ success: true });
     } catch (error) {
         console.error("Error storing log:", error);
@@ -143,9 +143,8 @@ app.get("/logs/:id", async (req, res) => {
     const { id } = req.params;
     
     try {
-        const logs = await client.lRange(`logs:${id}`, 0, -1);
-        const parsedLogs = logs.map(log => JSON.parse(log));
-        res.json(parsedLogs);
+        const logs = await Log.find({ deploymentId: id }).sort({ timestamp: 1 });
+        res.json(logs);
     } catch (error) {
         console.error("Error retrieving logs:", error);
         res.status(500).json({ error: "Failed to retrieve logs" });
@@ -254,18 +253,17 @@ app.get('/deployments', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Get deployments with their status and other details
+        // Get deployments with their status, logs, and other details
         const deploymentPromises = user.deployments.map(async (id) => {
             const status = await client.hGet("status", id) || 'unknown';
             const error = await client.hGet("error", id);
-            const logs = await client.lRange(`logs:${id}`, 0, -1);
-            const parsedLogs = logs.map(log => JSON.parse(log));
+            const logs = await Log.find({ deploymentId: id }).sort({ timestamp: 1 });
             
             return {
                 id,
                 status,
                 error: error || null,
-                logs: parsedLogs,
+                logs,
                 url: status === 'deployed' ? `http://${id}.localhost:3001` : null
             };
         });
@@ -331,6 +329,79 @@ app.delete('/deployments/:id', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Delete deployment error:', error);
         res.status(500).json({ error: 'Failed to delete deployment' });
+    }
+});
+
+app.post('/redeploy/:id', authenticateToken, async (req, res) => {
+    try {
+        if (!req.user?.userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const deploymentId = req.params.id;
+        
+        // Check if deployment exists in user's deployments
+        if (!user.deployments.includes(deploymentId)) {
+            return res.status(404).json({ error: 'Deployment not found' });
+        }
+
+        // Remove deployment from user's deployments array
+        user.deployments = user.deployments.filter(id => id !== deploymentId);
+        await user.save();
+        
+        // Clean up Redis data
+        await Promise.all([
+            client.hDel("status", deploymentId),
+            client.hDel("error", deploymentId),
+            client.del(`logs:${deploymentId}`)
+        ]);
+
+        // Delete deployment files from S3
+        try {
+            const objects = await s3.listObjectsV2({
+                Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                Prefix: `build/${deploymentId}`
+            }).promise();
+
+            if (objects.Contents && objects.Contents.length > 0) {
+                await s3.deleteObjects({
+                    Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                    Delete: {
+                        Objects: objects.Contents.map(({ Key }) => ({ Key: Key! }))
+                    }
+                }).promise();
+            }
+        } catch (error) {
+            console.error('Failed to cleanup S3:', error);
+            // Don't fail the request if S3 cleanup fails
+        }
+
+        // Trigger a new deployment
+        const repoUrl = req.body.repoUrl;
+        const id = deploymentId; // Use the same ID for redeployment
+        
+        await simpleGit().clone(repoUrl, path.join(__dirname, `output/${id}`));
+        const files = getAllFiles(path.join(__dirname, `output/${id}`));
+        
+        for (const file of files) {
+            await uploadFile(file.slice(__dirname.length + 1), file);
+        }
+        
+        user.deployments.push(id);
+        await user.save();
+        
+        await publisher.lPush("build-queue", id);
+        await publisher.hSet("status", id, "uploaded");
+        
+        res.json({ message: 'Redeployment triggered successfully', id });
+    } catch (error) {
+        console.error('Redeploy error:', error);
+        res.status(500).json({ error: 'Failed to redeploy' });
     }
 });
 
