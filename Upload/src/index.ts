@@ -115,7 +115,7 @@ app.post("/deploy", authenticateToken, async (req, res) => {
         res.json({ id });
     } catch (error) {
         console.error("Deploy error:", error);
-        res.status(500).json({ error: "Deployment failed" });
+        res.status(500).json({ error: error });
     }
 });
 
