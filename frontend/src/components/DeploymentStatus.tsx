@@ -27,8 +27,8 @@ export function DeploymentStatus({ deploymentId, onReset }: DeploymentStatusProp
         const checkStatus = async () => {
             try {
                 const [statusRes, logsRes] = await Promise.all([
-                    fetch(`http://localhost:3000/status?id=${deploymentId}`),
-                    fetch(`http://localhost:3000/logs/${deploymentId}`)
+                    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/status?id=${deploymentId}`),
+                    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/logs/${deploymentId}`)
                 ]);
                 
                 const statusData = await statusRes.json();
@@ -38,7 +38,7 @@ export function DeploymentStatus({ deploymentId, onReset }: DeploymentStatusProp
                 setLogs(logsData);
 
                 if (statusData.status === "failed") {
-                    const errorRes = await fetch(`http://localhost:3000/error/${deploymentId}`);
+                    const errorRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/error/${deploymentId}`);
                     const errorData = await errorRes.json();
                     setError(errorData.error);
                 }
@@ -57,7 +57,7 @@ export function DeploymentStatus({ deploymentId, onReset }: DeploymentStatusProp
         setProgress(((currentStage + 1) / stages.length) * 100)
     }, [status])
 
-    const deploymentLink = `http://${deploymentId}.localhost:3001`
+    const deploymentLink = `http://${deploymentId}.${process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || 'localhost:3001'}`
 
     return (
         <motion.div

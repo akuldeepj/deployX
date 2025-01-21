@@ -36,10 +36,13 @@ const app = express();
 
 // CORS configuration
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:3002'],
+    credentials: true,
+    origin: [
+        process.env.FRONTEND_URL || 'http://localhost:3002',
+        process.env.ADMIN_URL || 'http://localhost:3000'
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
-    credentials: true,
     optionsSuccessStatus: 204
 }));
 app.options('*', (req, res) => {
@@ -269,7 +272,7 @@ app.get('/deployments', authenticateToken, async (req, res) => {
                 status,
                 error: error || null,
                 logs,
-                url: status === 'deployed' ? `http://${id}.localhost:3001` : null
+                url: status === 'deployed' ? `http://${id}.${process.env.DEPLOYMENT_DOMAIN || 'localhost:3001'}` : null
             };
         });
 

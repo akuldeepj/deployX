@@ -33,7 +33,7 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
 
   const fetchDeployments = async () => {
     try {
-      const response = await fetch('http://localhost:3000/deployments', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/deployments`, {
         credentials: 'include'
       });
       const data = await response.json();
@@ -47,7 +47,7 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
 
   const handleDelete = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/deployments/${id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/deployments/${id}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: {
@@ -70,16 +70,16 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
     }
   };
 
-  const handleRedeploy = async (id: string,repourl : string) => {
+  const handleRedeploy = async (id: string, repourl: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/redeploy/${id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/redeploy/${id}`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ repoUrl: repourl }) // Replace with actual repo URL
+        body: JSON.stringify({ repoUrl: repourl })
       });
 
       const data = await response.json();
@@ -147,7 +147,7 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => handleRedeploy(deployment.id,deployment.repoUrl)}
+                      onClick={() => handleRedeploy(deployment.id, deployment.repoUrl)}
                       disabled={deployments.length >= 5}
                     >
                       <RefreshCw className="h-4 w-4" />
