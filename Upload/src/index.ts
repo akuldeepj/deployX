@@ -79,39 +79,44 @@ app.post("/deploy", authenticateToken, async (req, res) => {
     if (!req.user) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     try {
         const user = await User.findById(req.user.userId);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        
+
         if (user.deployments.length >= 5) {
             return res.status(400).json({ error: 'Maximum deployment limit reached' });
         }
-        
+
         const repoUrl = req.body.repoUrl;
+        if (!repoUrl) {
+            return res.status(400).json({ error: 'Repository URL is required' });
+        }
+
         const id = generate();
-        
         await simpleGit().clone(repoUrl, path.join(__dirname, `output/${id}`));
         const files = getAllFiles(path.join(__dirname, `output/${id}`));
-        
+
         for (const file of files) {
             await uploadFile(file.slice(__dirname.length + 1), file);
         }
-        
-        user.deployments.push(id);
+
+        user.deployments.push({ id, repoUrl }); // Ensure id and repoUrl are both set
         await user.save();
-        
+
         await publisher.lPush("build-queue", id);
         await publisher.hSet("status", id, "uploaded");
-        
+
         res.json({ id });
     } catch (error) {
         console.error("Deploy error:", error);
         res.status(500).json({ error: "Deployment failed" });
     }
 });
+
+
 
 app.get("/status", async (req, res) => {
     const id = req.query.id;
@@ -253,14 +258,14 @@ app.get('/deployments', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Get deployments with their status, logs, and other details
-        const deploymentPromises = user.deployments.map(async (id) => {
+        const deploymentPromises = user.deployments.map(async ({ id, repoUrl }) => {
             const status = await client.hGet("status", id) || 'unknown';
             const error = await client.hGet("error", id);
             const logs = await Log.find({ deploymentId: id }).sort({ timestamp: 1 });
             
             return {
                 id,
+                repoUrl, // Include the repo URL in the response
                 status,
                 error: error || null,
                 logs,
@@ -276,6 +281,7 @@ app.get('/deployments', authenticateToken, async (req, res) => {
     }
 });
 
+
 app.delete('/deployments/:id', authenticateToken, async (req, res) => {
     try {
         if (!req.user?.userId) {
@@ -289,23 +295,21 @@ app.delete('/deployments/:id', authenticateToken, async (req, res) => {
 
         const deploymentId = req.params.id;
         
-        // Check if deployment exists in user's deployments
-        if (!user.deployments.includes(deploymentId)) {
+        const deploymentIndex = user.deployments.findIndex(d => d.id === deploymentId);
+        if (deploymentIndex === -1) {
             return res.status(404).json({ error: 'Deployment not found' });
         }
 
-        // Remove deployment from user's deployments array
-        user.deployments = user.deployments.filter(id => id !== deploymentId);
+        user.deployments.splice(deploymentIndex, 1); // Remove the deployment
         await user.save();
-        
-        // Clean up Redis data
+
         await Promise.all([
             client.hDel("status", deploymentId),
             client.hDel("error", deploymentId),
             client.del(`logs:${deploymentId}`)
         ]);
-
-        // Delete deployment files from S3
+        await Log.deleteMany({ deploymentId });
+        // S3 cleanup logic remains unchanged
         try {
             const objects = await s3.listObjectsV2({
                 Bucket: `${process.env.AWS_BUCKET_NAME}`,
@@ -320,9 +324,22 @@ app.delete('/deployments/:id', authenticateToken, async (req, res) => {
                     }
                 }).promise();
             }
+
+            const outputObjects = await s3.listObjectsV2({
+                Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                Prefix: `output/${deploymentId}`
+            }).promise();
+
+            if (outputObjects.Contents && outputObjects.Contents.length > 0) {
+                await s3.deleteObjects({
+                    Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                    Delete: {
+                        Objects: outputObjects.Contents.map(({ Key }) => ({ Key: Key! }))
+                    }
+                }).promise();
+            }
         } catch (error) {
             console.error('Failed to cleanup S3:', error);
-            // Don't fail the request if S3 cleanup fails
         }
 
         res.json({ message: 'Deployment deleted successfully' });
@@ -331,6 +348,7 @@ app.delete('/deployments/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to delete deployment' });
     }
 });
+
 
 app.post('/redeploy/:id', authenticateToken, async (req, res) => {
     try {
@@ -344,22 +362,28 @@ app.post('/redeploy/:id', authenticateToken, async (req, res) => {
         }
 
         const deploymentId = req.params.id;
-        
-        // Check if deployment exists in user's deployments
-        if (!user.deployments.includes(deploymentId)) {
+
+        // Find the existing deployment
+        const deployment = user.deployments.find(d => d.id === deploymentId);
+        if (!deployment) {
             return res.status(404).json({ error: 'Deployment not found' });
         }
 
-        // Remove deployment from user's deployments array
-        user.deployments = user.deployments.filter(id => id !== deploymentId);
+        // Use the existing repoUrl or update it if provided in the request body
+        const repoUrl = req.body.repoUrl || deployment.repoUrl;
+
+        // Update deployment data
+        deployment.repoUrl = repoUrl; // Update the repo URL if necessary
         await user.save();
-        
+
         // Clean up Redis data
         await Promise.all([
             client.hDel("status", deploymentId),
             client.hDel("error", deploymentId),
             client.del(`logs:${deploymentId}`)
         ]);
+        // Clean the mongoDB logs
+        await Log.deleteMany({ deploymentId });
 
         // Delete deployment files from S3
         try {
@@ -376,33 +400,47 @@ app.post('/redeploy/:id', authenticateToken, async (req, res) => {
                     }
                 }).promise();
             }
+
+            const outputObjects = await s3.listObjectsV2({
+                Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                Prefix: `output/${deploymentId}`
+            }).promise();
+
+            if (outputObjects.Contents && outputObjects.Contents.length > 0) {
+                await s3.deleteObjects({
+                    Bucket: `${process.env.AWS_BUCKET_NAME}`,
+                    Delete: {
+                        Objects: outputObjects.Contents.map(({ Key }) => ({ Key: Key! }))
+                    }
+                }).promise();
+            }
         } catch (error) {
             console.error('Failed to cleanup S3:', error);
             // Don't fail the request if S3 cleanup fails
         }
 
         // Trigger a new deployment
-        const repoUrl = req.body.repoUrl;
-        const id = deploymentId; // Use the same ID for redeployment
-        
-        await simpleGit().clone(repoUrl, path.join(__dirname, `output/${id}`));
-        const files = getAllFiles(path.join(__dirname, `output/${id}`));
+        const outputPath = path.join(__dirname, `output/${deploymentId}`);
+        if (fs.existsSync(outputPath)) {
+            fs.rmSync(outputPath, { recursive: true, force: true });
+        }
+        await simpleGit().clone(repoUrl, outputPath, ['--recurse-submodules', '--depth', '1']);
+        const files = getAllFiles(path.join(__dirname, `output/${deploymentId}`));
         
         for (const file of files) {
             await uploadFile(file.slice(__dirname.length + 1), file);
         }
         
-        user.deployments.push(id);
-        await user.save();
+        // Push the deployment ID back to the Redis build queue
+        await publisher.lPush("build-queue", deploymentId);
+        await publisher.hSet("status", deploymentId, "uploaded");
         
-        await publisher.lPush("build-queue", id);
-        await publisher.hSet("status", id, "uploaded");
-        
-        res.json({ message: 'Redeployment triggered successfully', id });
+        res.json({ message: 'Redeployment triggered successfully', id: deploymentId });
     } catch (error) {
         console.error('Redeploy error:', error);
         res.status(500).json({ error: 'Failed to redeploy' });
     }
 });
+
 
 app.listen(3000);

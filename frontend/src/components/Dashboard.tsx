@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Loader2, RefreshCw, Trash2 } from 'lucide-react';
 
 interface Deployment {
+  repoUrl: string;
   id: string;
   status: string;
   error: string | null;
@@ -69,7 +70,7 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
     }
   };
 
-  const handleRedeploy = async (id: string) => {
+  const handleRedeploy = async (id: string,repourl : string) => {
     try {
       const response = await fetch(`http://localhost:3000/redeploy/${id}`, {
         method: 'POST',
@@ -78,7 +79,7 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ repoUrl: 'your-repo-url' }) // Replace with actual repo URL
+        body: JSON.stringify({ repoUrl: repourl }) // Replace with actual repo URL
       });
 
       const data = await response.json();
@@ -146,7 +147,7 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => handleRedeploy(deployment.id)}
+                      onClick={() => handleRedeploy(deployment.id,deployment.repoUrl)}
                       disabled={deployments.length >= 5}
                     >
                       <RefreshCw className="h-4 w-4" />

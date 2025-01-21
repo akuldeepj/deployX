@@ -11,10 +11,16 @@ const userSchema = new mongoose.Schema({
     required: true 
   },
   deployments: { 
-    type: [String], 
+    type: [
+      {
+        id: { type: String, required: true }, // Deployment ID
+        repoUrl: { type: String, required: true } // GitHub Repository URL
+      }
+    ], 
     default: [] 
   }
 }, { timestamps: true });
+
 
 const logSchema = new mongoose.Schema({
   deploymentId: { type: String, required: true },
