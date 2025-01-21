@@ -208,7 +208,7 @@ app.post('/auth/login', async (req, res) => {
     }
     
     const token = sign({ userId: user._id }, process.env.JWT_SECRET!);
-    res.cookie('token', token, { httpOnly: true });
+    res.cookie('token', token, { httpOnly: true,secure: true, sameSite: 'none',domain: process.env.COOKIE_DOMAIN || 'localhost' });
     res.status(200).json({ 
       user: { 
         id: user._id, 
