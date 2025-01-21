@@ -174,24 +174,25 @@ app.get("/error/:id", async (req, res) => {
 
 // Auth routes
 app.post('/auth/register', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const hashedPassword = await hash(password, 10);
+    res.status(500).json({error:'I wont let you register'});
+//   try {
+//     const { email, password } = req.body;
+//     const hashedPassword = await hash(password, 10);
     
-    const user = new User({
-      email,
-      password: hashedPassword,
-    });
+//     const user = new User({
+//       email,
+//       password: hashedPassword,
+//     });
     
-    await user.save();
-    res.status(200).json({ message: 'User registered successfully' });
-  } catch (error) {
-    console.error('Registration error:', error);
-    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
-      return res.status(400).json({ error: 'Email already exists' });
-    }
-    res.status(500).json({ error: 'Registration failed' });
-  }
+//     await user.save();
+//     res.status(200).json({ message: 'User registered successfully' });
+//   } catch (error) {
+//     console.error('Registration error:', error);
+//     if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+//       return res.status(400).json({ error: 'Email already exists' });
+//     }
+//     res.status(500).json({ error: 'Registration failed' });
+//   }
 });
 
 app.post('/auth/login', async (req, res) => {
@@ -223,11 +224,15 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
-app.get('/auth/logout', (req, res) => {
-    res.clearCookie('token');
+app.post('/auth/logout', (req, res) => {
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        domain: process.env.COOKIE_DOMAIN || 'localhost'
+    });
     res.status(200).json({ message: 'Logged out' });
-    }
-);
+});
 
 app.get("/auth/session", authenticateToken, async (req, res) => {
     if (!req.user) {

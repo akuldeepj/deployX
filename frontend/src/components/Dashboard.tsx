@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, LogOut } from 'lucide-react';
 
 interface Deployment {
   repoUrl: string;
@@ -20,7 +20,7 @@ interface Deployment {
 }
 
 export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -101,13 +101,22 @@ export function Dashboard({ onNewDeployment }: { onNewDeployment: () => void }) 
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Your Deployments</CardTitle>
-        <Button 
-          onClick={onNewDeployment}
-          disabled={deployments.length >= 5}
-          className="ml-auto"
-        >
-          New Deployment
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={onNewDeployment}
+            disabled={deployments.length >= 5}
+          >
+            New Deployment
+          </Button>
+          <Button 
+            variant="destructive"
+            onClick={logout}
+            className="flex items-center gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="grid gap-4">
         {isLoading ? (
