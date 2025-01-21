@@ -15,6 +15,8 @@ import { User } from "./models/User";
 import fs from 'fs';
 import AWS from 'aws-sdk';
 import { Log } from './models/User';
+import dotenv from 'dotenv';
+dotenv.config();
 
 declare global {
   namespace Express {
@@ -444,6 +446,5 @@ app.post('/redeploy/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to redeploy' });
     }
 });
-
 
 app.listen(3000);
