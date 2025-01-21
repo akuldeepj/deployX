@@ -35,7 +35,7 @@ client.connect();
 const s3 = new AWS.S3();
 
 const app = express();
-
+console.log(process.env.FRONTEND_URL);
 // CORS configuration
 app.use(cors({
     credentials: true,
