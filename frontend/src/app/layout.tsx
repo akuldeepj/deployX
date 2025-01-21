@@ -5,8 +5,8 @@ import { Inter } from "next/font/google"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Futuristic Deployment",
-  description: "A modern and futuristic deployment interface",
+  title: "DeployX",
+  description: "Deploy React applications with ease.",
 }
 
 export default function RootLayout({
