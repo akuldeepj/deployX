@@ -41,7 +41,7 @@ app.use(cors({
     credentials: true,
     origin: [
         process.env.FRONTEND_URL || 'http://localhost:3002',
-        process.env.FRONTEND_URL_1 || 'http://localhost:3001',
+        'https://deployx.akuldeepj.me',
         process.env.ADMIN_URL || 'http://localhost:3000'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
