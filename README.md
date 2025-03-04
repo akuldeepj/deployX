@@ -1,4 +1,4 @@
-# DeployX - Vercel Clone Project(React only for now)
+# DeployX - Vercel Clone Project(React only)
 
 A full-stack application that replicates core Vercel deployment functionality, allowing users to deploy web applications directly from GitHub repositories.
 
