@@ -52,6 +52,34 @@ The project consists of four main components:
 - AWS Account with S3 access
 - Git
 
+### Installing Redis
+
+#### On Mac:
+```bash
+# Using Homebrew
+brew install redis
+# Start Redis
+brew services start redis
+```
+
+#### On Linux (Ubuntu/Debian):
+```bash
+# Update package list
+sudo apt update
+# Install Redis
+sudo apt install redis-server
+# Start Redis
+sudo systemctl start redis-server
+# Enable Redis on startup
+sudo systemctl enable redis-server
+```
+
+To verify Redis installation:
+```bash
+redis-cli ping
+# Should return "PONG"
+```
+
 ## 🚦 Getting Started
 
 1. Clone the repository:
