@@ -109,13 +109,6 @@ cd ../Request && npm run dev
 cd ../frontend && npm run dev
 ```
 
-## 🔐 Security
-
-- JWT-based authentication
-- Secure cookie handling
-- Rate limiting on deployments
-- Environment variable protection
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
